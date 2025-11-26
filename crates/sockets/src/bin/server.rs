@@ -3,11 +3,9 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use libc::{AF_INET, AI_PASSIVE, SOCK_STREAM};
 
-mod socket;
-
 fn main() {
     let addr_info = get_addr_info().unwrap();
-    let socket = socket::Socket::try_from(&addr_info).unwrap();
+    let socket = sockets::socket::Socket::try_from(&addr_info).unwrap();
     let bound = socket.bind(&addr_info).unwrap();
     println!("Created and bound socket: {:?}", bound);
 }

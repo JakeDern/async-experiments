@@ -26,12 +26,6 @@ pub struct Connected;
 #[derive(Debug)]
 pub struct Listening;
 
-impl<T> Socket<T> {
-    pub fn close(self) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
-
 impl Socket<Unbound> {
     pub fn new(addr: &libc::addrinfo) -> anyhow::Result<Self> {
         let socket = unsafe { libc::socket(addr.ai_family, addr.ai_socktype, addr.ai_protocol) };
