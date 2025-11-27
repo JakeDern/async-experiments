@@ -16,6 +16,12 @@ pub struct Socket<T> {
     state: std::marker::PhantomData<T>,
 }
 
+impl<T> Socket<T> {
+    pub fn into_inner(self) -> RawFd {
+        self.fd
+    }
+}
+
 #[derive(Debug)]
 pub struct Unbound;
 #[derive(Debug)]
@@ -44,9 +50,8 @@ impl Socket<Unbound> {
             return Err(anyhow::anyhow!("Failed to bind socket: {}", bind_res));
         }
 
-        let Self { fd, .. } = self;
         Ok(Socket::<Bound> {
-            fd,
+            fd: self.into_inner(),
             state: std::marker::PhantomData,
         })
     }
@@ -63,9 +68,8 @@ impl Socket<Bound> {
             return Err(anyhow::anyhow!("Failed to listen on socket: {}", res));
         }
 
-        let Self { fd, .. } = self;
         Ok(Socket::<Listening> {
-            fd,
+            fd: self.into_inner(),
             state: std::marker::PhantomData,
         })
     }
@@ -112,10 +116,8 @@ fn connect_socket<T>(
         return Err(anyhow::anyhow!("Failed to connect socket: {}", res));
     }
 
-    let Socket::<T> { fd, .. } = socket;
-
     Ok(Socket::<Connected> {
-        fd,
+        fd: socket.into_inner(),
         state: std::marker::PhantomData,
     })
 }
