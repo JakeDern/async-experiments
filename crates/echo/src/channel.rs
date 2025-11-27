@@ -1,10 +1,11 @@
 use std::fmt::Display;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
 
 pub fn oneshot<T>() -> (Sender<T>, Receiver<T>) {
-    let shared = Arc::new(Mutex::new(Shared::<T> {
+    let shared = Rc::new(Mutex::new(Shared::<T> {
         value: None,
         waker: None,
         closed: false,
@@ -22,11 +23,11 @@ pub fn oneshot<T>() -> (Sender<T>, Receiver<T>) {
 }
 
 pub struct Receiver<T> {
-    inner: Arc<Mutex<Shared<T>>>,
+    inner: Rc<Mutex<Shared<T>>>,
 }
 
 pub struct Sender<T> {
-    inner: Arc<Mutex<Shared<T>>>,
+    inner: Rc<Mutex<Shared<T>>>,
 }
 
 struct Shared<T> {
