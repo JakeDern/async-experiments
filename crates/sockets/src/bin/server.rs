@@ -6,10 +6,15 @@ fn main() -> anyhow::Result<()> {
     let socket = socket.bind(&addr_info)?;
     let socket = socket.listen(10)?;
     println!("Created and bound socket: {:?}", socket);
-    let client_addr = socket.accept().unwrap();
+    let (fd, client_addr) = socket.accept().unwrap();
     println!(
-        "Accepted socket: {:?}",
+        "Accepted socket. fd: {:?}, addr: {:?}",
+        fd,
         sockaddr_to_string(&client_addr).unwrap()
     );
+
+    let buf = b"Hello, world!\n";
+    fd.send(buf)?;
+
     Ok(())
 }

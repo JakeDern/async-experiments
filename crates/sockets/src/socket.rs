@@ -1,11 +1,31 @@
 #[derive(Debug)]
 pub struct RawFd(i32);
 
+impl RawFd {
+    pub fn send(&self, buf: &[u8]) -> anyhow::Result<usize> {
+        // TODO: What kind of flags for the last argument might we care about?
+        let res = unsafe { libc::send(self.0, buf.as_ptr() as *const _, buf.len(), 0) };
+        if res < 0 {
+            return Err(anyhow::anyhow!("Failed to send data: {}", res));
+        }
+        Ok(res as usize)
+    }
+
+    pub fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
+        let res = unsafe { libc::recv(self.0, buf.as_ptr() as *mut _, buf.len(), 0) };
+        if res < 0 {
+            return Err(anyhow::anyhow!("Failed to receive data: {}", res));
+        }
+
+        Ok(res as usize)
+    }
+}
+
 impl Drop for RawFd {
     fn drop(&mut self) {
         unsafe {
             let res = libc::close(self.0);
-            println!("Socket '{}', closed with '{}'", self.0, res);
+            println!("File Descriptor '{}', closed with '{}'", self.0, res);
         }
     }
 }
@@ -32,6 +52,8 @@ pub struct Connected;
 pub struct Listening;
 
 impl Socket<Unbound> {
+    // TODO: What we should do here is keep trying to bind to each address in
+    // the addrinfo list until one works.
     pub fn new(addr: &libc::addrinfo) -> anyhow::Result<Self> {
         let socket = unsafe { libc::socket(addr.ai_family, addr.ai_socktype, addr.ai_protocol) };
         if socket < 0 {
@@ -79,8 +101,21 @@ impl Socket<Bound> {
     }
 }
 
+impl TryFrom<&libc::addrinfo> for Socket<Unbound> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &libc::addrinfo) -> Result<Self, Self::Error> {
+        Socket::<Unbound>::new(value)
+    }
+}
+
 impl Socket<Listening> {
-    pub fn accept(&self) -> anyhow::Result<libc::sockaddr> {
+    // TODO: Consider that sockaddr might only be large enough for IPV4 and
+    // we may need to use sockaddr_storage to allow for IPV6
+    //
+    // Accept takes sockaddr though, probably that works because the layout is
+    // the same and we can just cast it.
+    pub fn accept(&self) -> anyhow::Result<(RawFd, libc::sockaddr)> {
         let mut client_addr: libc::sockaddr = unsafe { std::mem::zeroed() };
         let mut addr_len = std::mem::size_of::<libc::sockaddr>() as libc::socklen_t;
         let res = unsafe {
@@ -95,15 +130,13 @@ impl Socket<Listening> {
             return Err(anyhow::anyhow!("Failed to accept connection: {}", res));
         }
 
-        Ok(client_addr)
+        Ok((RawFd(res), client_addr))
     }
 }
 
-impl TryFrom<&libc::addrinfo> for Socket<Unbound> {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &libc::addrinfo) -> Result<Self, Self::Error> {
-        Socket::<Unbound>::new(value)
+impl Socket<Connected> {
+    pub fn recv(&self, buf: &mut [u8]) -> anyhow::Result<usize> {
+        self.fd.recv(buf)
     }
 }
 
