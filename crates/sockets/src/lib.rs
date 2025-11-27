@@ -6,6 +6,40 @@ use libc::{AF_INET, AI_PASSIVE, SOCK_STREAM};
 pub mod epoll;
 pub mod socket;
 
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct RawFd(pub(crate) i32);
+
+impl RawFd {
+    pub fn new(i: i32) -> Self {
+        Self(i)
+    }
+
+    pub fn inner(&self) -> i32 {
+        self.0
+    }
+
+    // Send is not a valid operation on every socket type
+    pub fn send(&self, buf: &[u8]) -> anyhow::Result<usize> {
+        // TODO: What kind of flags for the last argument might we care about?
+        let res = unsafe { libc::send(self.0, buf.as_ptr() as *const _, buf.len(), 0) };
+        if res < 0 {
+            return Err(anyhow::anyhow!("Failed to send data: {}", res));
+        }
+        Ok(res as usize)
+    }
+
+    // recv is not a valid operation on every socket type
+    pub fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
+        let res = unsafe { libc::recv(self.0, buf.as_ptr() as *mut _, buf.len(), 0) };
+        if res < 0 {
+            return Err(anyhow::anyhow!("Failed to receive data: {}", res));
+        }
+
+        Ok(res as usize)
+    }
+}
+
 pub fn get_local_addr_info(port: &str) -> anyhow::Result<libc::addrinfo> {
     let mut hints: libc::addrinfo = unsafe { mem::zeroed() };
     hints.ai_family = AF_INET;

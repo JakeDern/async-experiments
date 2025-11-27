@@ -1,34 +1,4 @@
-#[derive(Debug)]
-pub struct RawFd(pub(crate) i32);
-
-impl RawFd {
-    fn send(&self, buf: &[u8]) -> anyhow::Result<usize> {
-        // TODO: What kind of flags for the last argument might we care about?
-        let res = unsafe { libc::send(self.0, buf.as_ptr() as *const _, buf.len(), 0) };
-        if res < 0 {
-            return Err(anyhow::anyhow!("Failed to send data: {}", res));
-        }
-        Ok(res as usize)
-    }
-
-    fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
-        let res = unsafe { libc::recv(self.0, buf.as_ptr() as *mut _, buf.len(), 0) };
-        if res < 0 {
-            return Err(anyhow::anyhow!("Failed to receive data: {}", res));
-        }
-
-        Ok(res as usize)
-    }
-}
-
-impl Drop for RawFd {
-    fn drop(&mut self) {
-        unsafe {
-            let res = libc::close(self.0);
-            println!("File Descriptor '{}', closed with '{}'", self.0, res);
-        }
-    }
-}
+use crate::RawFd;
 
 #[derive(Debug)]
 pub struct SocketFd<T> {
@@ -39,6 +9,20 @@ pub struct SocketFd<T> {
 impl<T> SocketFd<T> {
     pub fn into_inner(self) -> RawFd {
         self.fd
+    }
+
+    pub fn as_ref(&self) -> &RawFd {
+        &self.fd
+    }
+
+    pub fn close(self) -> anyhow::Result<()> {
+        let res = unsafe { libc::close(self.fd.0) };
+
+        if res < 0 {
+            return Err(anyhow::anyhow!("Failed to close socket: {}", res));
+        }
+
+        Ok(())
     }
 }
 

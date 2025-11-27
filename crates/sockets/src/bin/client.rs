@@ -3,12 +3,7 @@ fn main() -> anyhow::Result<()> {
     let socket = sockets::socket::SocketFd::try_from(&addr_info).unwrap();
     let socket = socket.connect(&addr_info)?;
     println!("Connected to socket {:?}", socket);
-    let mut buf = [0; 1024];
-    let nbytes = socket.recv(&mut buf)?;
-    println!(
-        "Received {} bytes: {:?}",
-        nbytes,
-        String::from_utf8_lossy(&buf[..nbytes])
-    );
+    let nbytes = socket.send("Hello, World".as_bytes())?;
+    println!("Sent {} bytes", nbytes);
     Ok(())
 }
