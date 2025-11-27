@@ -1,11 +1,11 @@
+use std::cell::RefCell;
 use std::fmt::Display;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
 
 pub fn oneshot<T>() -> (Sender<T>, Receiver<T>) {
-    let shared = Rc::new(Mutex::new(Shared::<T> {
+    let shared = Rc::new(RefCell::new(Shared::<T> {
         value: None,
         waker: None,
         closed: false,
@@ -23,11 +23,11 @@ pub fn oneshot<T>() -> (Sender<T>, Receiver<T>) {
 }
 
 pub struct Receiver<T> {
-    inner: Rc<Mutex<Shared<T>>>,
+    inner: Rc<RefCell<Shared<T>>>,
 }
 
 pub struct Sender<T> {
-    inner: Rc<Mutex<Shared<T>>>,
+    inner: Rc<RefCell<Shared<T>>>,
 }
 
 struct Shared<T> {
@@ -37,8 +37,8 @@ struct Shared<T> {
 }
 
 impl<T> Sender<T> {
-    fn send(&self, value: T) -> Result<()> {
-        let mut shared = self.inner.lock().unwrap();
+    pub fn send(&self, value: T) -> Result<()> {
+        let mut shared = self.inner.borrow_mut();
         if shared.closed {
             return Err(Error::ChannelClosed);
         }
@@ -58,7 +58,7 @@ impl<T> Sender<T> {
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        let mut shared = self.inner.lock().unwrap();
+        let mut shared = self.inner.borrow_mut();
         shared.closed = true;
     }
 }
@@ -67,7 +67,7 @@ impl<T> Future for Receiver<T> {
     type Output = Result<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut shared = self.inner.lock().unwrap();
+        let mut shared = self.inner.borrow_mut();
         if shared.closed {
             return Poll::Ready(Err(Error::ChannelClosed));
         }
@@ -84,7 +84,7 @@ impl<T> Future for Receiver<T> {
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        let mut shared = self.inner.lock().unwrap();
+        let mut shared = self.inner.borrow_mut();
         shared.closed = true;
     }
 }
