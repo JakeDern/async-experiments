@@ -1,8 +1,8 @@
 #[derive(Debug)]
-pub struct RawFd(i32);
+pub struct RawFd(pub(crate) i32);
 
 impl RawFd {
-    pub fn send(&self, buf: &[u8]) -> anyhow::Result<usize> {
+    fn send(&self, buf: &[u8]) -> anyhow::Result<usize> {
         // TODO: What kind of flags for the last argument might we care about?
         let res = unsafe { libc::send(self.0, buf.as_ptr() as *const _, buf.len(), 0) };
         if res < 0 {
@@ -11,7 +11,7 @@ impl RawFd {
         Ok(res as usize)
     }
 
-    pub fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
+    fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
         let res = unsafe { libc::recv(self.0, buf.as_ptr() as *mut _, buf.len(), 0) };
         if res < 0 {
             return Err(anyhow::anyhow!("Failed to receive data: {}", res));
@@ -31,12 +31,12 @@ impl Drop for RawFd {
 }
 
 #[derive(Debug)]
-pub struct Socket<T> {
+pub struct SocketFd<T> {
     fd: RawFd,
     state: std::marker::PhantomData<T>,
 }
 
-impl<T> Socket<T> {
+impl<T> SocketFd<T> {
     pub fn into_inner(self) -> RawFd {
         self.fd
     }
@@ -51,7 +51,7 @@ pub struct Connected;
 #[derive(Debug)]
 pub struct Listening;
 
-impl Socket<Unbound> {
+impl SocketFd<Unbound> {
     // TODO: What we should do here is keep trying to bind to each address in
     // the addrinfo list until one works.
     pub fn new(addr: &libc::addrinfo) -> anyhow::Result<Self> {
@@ -60,62 +60,67 @@ impl Socket<Unbound> {
             return Err(anyhow::anyhow!("Failed to create socket"));
         }
 
-        Ok(Socket {
+        Ok(SocketFd {
             fd: RawFd(socket),
             state: std::marker::PhantomData,
         })
     }
 
-    pub fn bind(self, addr: &libc::addrinfo) -> anyhow::Result<Socket<Bound>> {
+    pub fn bind(self, addr: &libc::addrinfo) -> anyhow::Result<SocketFd<Bound>> {
         let bind_res = unsafe { libc::bind(self.fd.0, addr.ai_addr, addr.ai_addrlen) };
         if bind_res < 0 {
             return Err(anyhow::anyhow!("Failed to bind socket: {}", bind_res));
         }
 
-        Ok(Socket::<Bound> {
+        Ok(SocketFd::<Bound> {
             fd: self.into_inner(),
             state: std::marker::PhantomData,
         })
     }
 
-    pub fn connect(self, addr: &libc::addrinfo) -> anyhow::Result<Socket<Connected>> {
+    pub fn connect(self, addr: &libc::addrinfo) -> anyhow::Result<SocketFd<Connected>> {
         connect_socket(self, addr)
     }
 }
 
-impl Socket<Bound> {
-    pub fn listen(self, backlog: usize) -> anyhow::Result<Socket<Listening>> {
+impl SocketFd<Bound> {
+    pub fn listen(self, backlog: usize) -> anyhow::Result<SocketFd<Listening>> {
         let res = unsafe { libc::listen(self.fd.0, backlog as i32) };
         if res < 0 {
             return Err(anyhow::anyhow!("Failed to listen on socket: {}", res));
         }
 
-        Ok(Socket::<Listening> {
+        Ok(SocketFd::<Listening> {
             fd: self.into_inner(),
             state: std::marker::PhantomData,
         })
     }
 
-    pub fn connect(self, addr: &libc::addrinfo) -> anyhow::Result<Socket<Connected>> {
+    // We can receive a datagram on a bound socket even if we're not connected
+    pub fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
+        self.fd.recv(buf)
+    }
+
+    pub fn connect(self, addr: &libc::addrinfo) -> anyhow::Result<SocketFd<Connected>> {
         connect_socket(self, addr)
     }
 }
 
-impl TryFrom<&libc::addrinfo> for Socket<Unbound> {
+impl TryFrom<&libc::addrinfo> for SocketFd<Unbound> {
     type Error = anyhow::Error;
 
     fn try_from(value: &libc::addrinfo) -> Result<Self, Self::Error> {
-        Socket::<Unbound>::new(value)
+        SocketFd::<Unbound>::new(value)
     }
 }
 
-impl Socket<Listening> {
+impl SocketFd<Listening> {
     // TODO: Consider that sockaddr might only be large enough for IPV4 and
     // we may need to use sockaddr_storage to allow for IPV6
     //
     // Accept takes sockaddr though, probably that works because the layout is
     // the same and we can just cast it.
-    pub fn accept(&self) -> anyhow::Result<(RawFd, libc::sockaddr)> {
+    pub fn accept(&self) -> anyhow::Result<(SocketFd<Connected>, libc::sockaddr)> {
         let mut client_addr: libc::sockaddr = unsafe { std::mem::zeroed() };
         let mut addr_len = std::mem::size_of::<libc::sockaddr>() as libc::socklen_t;
         let res = unsafe {
@@ -130,26 +135,36 @@ impl Socket<Listening> {
             return Err(anyhow::anyhow!("Failed to accept connection: {}", res));
         }
 
-        Ok((RawFd(res), client_addr))
+        Ok((
+            SocketFd::<Connected> {
+                fd: RawFd(res),
+                state: std::marker::PhantomData,
+            },
+            client_addr,
+        ))
     }
 }
 
-impl Socket<Connected> {
-    pub fn recv(&self, buf: &mut [u8]) -> anyhow::Result<usize> {
+impl SocketFd<Connected> {
+    pub fn send(&self, buf: &[u8]) -> anyhow::Result<usize> {
+        self.fd.send(buf)
+    }
+
+    pub fn recv(&self, buf: &[u8]) -> anyhow::Result<usize> {
         self.fd.recv(buf)
     }
 }
 
 fn connect_socket<T>(
-    socket: Socket<T>,
+    socket: SocketFd<T>,
     addr: &libc::addrinfo,
-) -> anyhow::Result<Socket<Connected>> {
+) -> anyhow::Result<SocketFd<Connected>> {
     let res = unsafe { libc::connect(socket.fd.0, addr.ai_addr, addr.ai_addrlen) };
     if res < 0 {
         return Err(anyhow::anyhow!("Failed to connect socket: {}", res));
     }
 
-    Ok(Socket::<Connected> {
+    Ok(SocketFd::<Connected> {
         fd: socket.into_inner(),
         state: std::marker::PhantomData,
     })

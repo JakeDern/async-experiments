@@ -3,6 +3,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use libc::{AF_INET, AI_PASSIVE, SOCK_STREAM};
 
+pub mod epoll;
 pub mod socket;
 
 pub fn get_local_addr_info(port: &str) -> anyhow::Result<libc::addrinfo> {
