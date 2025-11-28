@@ -25,6 +25,14 @@ pub struct JoinHandle<T> {
     rx: channel::Receiver<T>,
 }
 
+impl<T> Future for JoinHandle<T> {
+    type Output = Result<T, channel::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.rx).poll(cx)
+    }
+}
+
 impl Executor {
     fn new() -> Self {
         Self {
@@ -43,9 +51,11 @@ impl Executor {
         self.current_id += 1;
 
         let (tx, rx) = channel::oneshot::<T>();
+        println!("Creating task for id: {}", id);
         let task = Task {
             id,
             future: Box::pin(async move {
+                println!("Running task for id: {}", id);
                 tx.send(fut.await).unwrap();
             }),
         };
@@ -74,20 +84,28 @@ impl Executor {
     }
 
     fn run(&mut self) {
-        while let Some(task_id) = self.ready_tasks.borrow_mut().pop_front() {
-            if let Some(task) = self.tasks.get_mut(&task_id) {
-                let waker = Arc::new(Waker {
-                    task_id,
-                    ready_tasks: self.ready_tasks.clone(),
-                })
-                .into();
-                let mut context = Context::from_waker(&waker);
-                match task.future.as_mut().poll(&mut context) {
-                    Poll::Ready(()) => {
-                        self.tasks.remove(&task_id);
-                    }
-                    Poll::Pending => {}
+        loop {
+            let task_id = match self.ready_tasks.borrow_mut().pop_front() {
+                Some(task_id) => task_id,
+                None => break,
+            };
+
+            let Some(task) = self.tasks.get_mut(&task_id) else {
+                panic!("Task in ready set, but not tracked in map.");
+            };
+
+            let waker = Arc::new(Waker {
+                task_id,
+                ready_tasks: self.ready_tasks.clone(),
+            })
+            .into();
+
+            let mut context = Context::from_waker(&waker);
+            match task.future.as_mut().poll(&mut context) {
+                Poll::Ready(()) => {
+                    self.tasks.remove(&task_id);
                 }
+                Poll::Pending => {}
             }
         }
     }
@@ -130,10 +148,27 @@ mod test {
     }
 
     #[test]
-    fn test_run() {
+    fn test_block_on() {
         let mut executor = Executor::new();
         let (tx, rx) = channel::oneshot::<i32>();
         tx.send(42).unwrap();
+        let result = executor.block_on(async move {
+            let res = rx.await.unwrap();
+            println!("Received: {}", res);
+            res
+        });
+
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_send_from_fut() {
+        let mut executor = Executor::new();
+        let (tx, rx) = channel::oneshot::<i32>();
+        let handle = executor.spawn(async move {
+            println!("Sending 42");
+            tx.send(42).unwrap();
+        });
         let result = executor.block_on(async move {
             let res = rx.await.unwrap();
             println!("Received: {}", res);

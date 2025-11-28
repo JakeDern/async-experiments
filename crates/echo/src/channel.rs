@@ -51,16 +51,8 @@ struct Shared<T> {
 }
 
 impl<T> Sender<T> {
-    pub fn send(&self, value: T) -> Result<()> {
+    pub fn send(self, value: T) -> Result<()> {
         let mut shared = self.inner.borrow_mut();
-        if shared.closed {
-            return Err(Error::ChannelClosed);
-        }
-
-        if shared.value.is_some() {
-            return Err(Error::DuplicateSend);
-        }
-
         shared.value = Some(value);
         if let Some(waker) = shared.waker.take() {
             waker.wake();
@@ -82,13 +74,13 @@ impl<T> Future for Receiver<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut shared = self.inner.borrow_mut();
-        if shared.closed {
-            return Poll::Ready(Err(Error::ChannelClosed));
-        }
-
         if let Some(value) = shared.value.take() {
             shared.closed = true;
             return Poll::Ready(Ok(value));
+        }
+
+        if shared.closed {
+            return Poll::Ready(Err(Error::ChannelClosed));
         }
 
         shared.waker = Some(cx.waker().clone());
@@ -98,6 +90,7 @@ impl<T> Future for Receiver<T> {
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
+        println!("Dropping receiver");
         let mut shared = self.inner.borrow_mut();
         shared.closed = true;
     }
@@ -108,14 +101,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     ChannelClosed,
-    DuplicateSend,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::ChannelClosed => write!(f, "Channel is closed"),
-            Error::DuplicateSend => write!(f, "Duplicate send on oneshot channel"),
         }
     }
 }
@@ -137,7 +128,6 @@ mod test {
     async fn test_duplicate_send() {
         let (tx, rx) = oneshot::<usize>();
         tx.send(42).unwrap();
-        assert_eq!(tx.send(42), Err(Error::DuplicateSend));
         assert_eq!(42, rx.await.unwrap());
     }
 
@@ -146,7 +136,6 @@ mod test {
         let (tx, rx) = oneshot::<usize>();
         tx.send(42).unwrap();
         assert_eq!(42, rx.await.unwrap());
-        assert_eq!(Err(Error::ChannelClosed), tx.send(43));
     }
 
     #[tokio::test]
@@ -168,5 +157,12 @@ mod test {
         let (tx, rx) = oneshot::<usize>();
         drop(rx);
         drop(tx);
+    }
+
+    #[tokio::test]
+    async fn test_send_drop_recv() {
+        let (tx, rx) = oneshot::<usize>();
+        tx.send(42).unwrap();
+        assert_eq!(42, rx.await.unwrap());
     }
 }
