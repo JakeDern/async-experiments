@@ -26,6 +26,20 @@ pub struct Receiver<T> {
     inner: Rc<RefCell<Shared<T>>>,
 }
 
+impl<T> Receiver<T> {
+    pub fn try_recv(&self) -> Option<T> {
+        let mut shared = self.inner.borrow_mut();
+        let value = shared.value.take();
+        match value {
+            None => None,
+            Some(x) => {
+                shared.closed = true;
+                Some(x)
+            }
+        }
+    }
+}
+
 pub struct Sender<T> {
     inner: Rc<RefCell<Shared<T>>>,
 }
