@@ -85,6 +85,10 @@ impl Executor {
 
     fn run(&mut self) {
         loop {
+            // IMPL: We cannot hold a borrow to the ready tasks while also polling,
+            // as there is a risk that the poll will cause a wake that modifies
+            // the ready tasks. So we pop the task ID first, drop the borrow,
+            // and then poll.
             let task_id = match self.ready_tasks.borrow_mut().pop_front() {
                 Some(task_id) => task_id,
                 None => break,
@@ -165,7 +169,7 @@ mod test {
     fn test_send_from_fut() {
         let mut executor = Executor::new();
         let (tx, rx) = channel::oneshot::<i32>();
-        let handle = executor.spawn(async move {
+        executor.spawn(async move {
             println!("Sending 42");
             tx.send(42).unwrap();
         });
