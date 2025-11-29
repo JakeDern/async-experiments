@@ -85,7 +85,7 @@ impl Executor {
 
     fn run(&mut self) {
         loop {
-            // IMPL: We cannot hold a borrow to the ready tasks while also polling,
+            // We cannot hold a borrow to the ready tasks while also polling,
             // as there is a risk that the poll will cause a wake that modifies
             // the ready tasks. So we pop the task ID first, drop the borrow,
             // and then poll.
