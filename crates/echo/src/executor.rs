@@ -34,7 +34,7 @@ impl<T> Future for JoinHandle<T> {
 }
 
 impl Executor {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             ready_tasks: Rc::new(RefCell::new(VecDeque::new())),
             tasks: HashMap::new(),

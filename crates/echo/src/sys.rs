@@ -4,6 +4,7 @@ use std::os::fd::RawFd;
 
 use libc::c_int;
 
+#[macro_export]
 macro_rules! syscall {
     ($fn_name:ident ( $($arg:expr),* $(,)? ) ) => {
         {
@@ -17,12 +18,22 @@ macro_rules! syscall {
     };
 }
 
+#[repr(i32)]
+pub enum EpollEventKind {
+    Readable = libc::EPOLLIN,
+    Writable = libc::EPOLLOUT,
+}
+
+pub fn epoll_create() -> io::Result<RawFd> {
+    syscall!(epoll_create1(0))
+}
+
 pub fn listen_socket(fd: RawFd, backlog: c_int) -> io::Result<i32> {
     syscall!(listen(fd, backlog))
 }
 
 pub fn bind_socket(fd: RawFd, addr: SocketAddr, reuseport: bool) -> io::Result<i32> {
-    let addrinfo = socket_addr_to_addrinfo(addr);
+    let addrinfo = socketaddr_to_addrinfo(addr);
     if reuseport {
         set_so_reuseport(fd)?;
     }
@@ -53,7 +64,7 @@ pub fn set_so_reuseport(fd: RawFd) -> io::Result<i32> {
     ))
 }
 
-pub fn socket_addr_to_addrinfo(addr: SocketAddr) -> libc::addrinfo {
+pub fn socketaddr_to_addrinfo(addr: SocketAddr) -> libc::addrinfo {
     match addr {
         SocketAddr::V4(v4_addr) => {
             let sockaddr_in = libc::sockaddr_in {
