@@ -14,16 +14,21 @@ where
     F: Future<Output = T> + 'static,
     T: 'static,
 {
-    EXECUTOR.with_borrow_mut(|executor| {
-        executor
-            .as_mut()
-            .expect("Executor not initialized")
-            .spawn(fut)
-    })
+    executor(move |e| e.spawn(fut))
 }
 
 pub fn make_progress() {
-    EXECUTOR.with_borrow_mut(|executor| executor.as_mut().expect("Executor not initialized").run())
+    executor(|e| e.run())
+}
+
+pub fn executor<F, T>(f: F) -> T
+where
+    F: FnOnce(&mut Executor) -> T,
+{
+    EXECUTOR.with_borrow_mut(|executor| {
+        let executor = executor.as_mut().expect("Executor not initialized");
+        return f(executor);
+    })
 }
 
 pub struct Task {
