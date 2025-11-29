@@ -14,14 +14,14 @@ where
     F: Future<Output = T> + 'static,
     T: 'static,
 {
-    executor(move |e| e.spawn(fut))
+    local_executor(move |e| e.spawn(fut))
 }
 
 pub fn make_progress() {
-    executor(|e| e.run())
+    local_executor(|e| e.run())
 }
 
-pub fn executor<F, T>(f: F) -> T
+fn local_executor<F, T>(f: F) -> T
 where
     F: FnOnce(&mut Executor) -> T,
 {

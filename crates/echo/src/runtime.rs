@@ -3,7 +3,7 @@ use std::io;
 use crate::executor::{self, Executor};
 use crate::{EXECUTOR, REACTOR, reactor};
 
-pub fn block_on<F, T>(fut: F) -> io::Result<T>
+pub fn run<F, T>(fut: F) -> io::Result<T>
 where
     F: Future<Output = T> + 'static,
     T: 'static,
@@ -22,7 +22,7 @@ where
             panic!("Runtime already started on this thread");
         }
         let executor = Executor::new();
-        *exec.borrow_mut() = Some(executor);
+        return *exec.borrow_mut() = Some(executor);
     });
 
     let _ = executor::spawn(fut);
