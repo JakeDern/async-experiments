@@ -1,22 +1,18 @@
-use echo::executor::Executor;
+use echo::runtime;
 use echo::tcp::TcpListener;
-use std::cell::RefCell;
 use std::net::SocketAddr;
-use std::os::fd::AsRawFd;
-
-thread_local! {
-    pub static EXECUTOR: RefCell<Option<Executor>> = RefCell::new(None);
-}
 
 // Each thread gets its own copy, initialized to None
-
 fn main() {
-    EXECUTOR.with(|exec| {
-        let executor = Executor::new();
-        *exec.borrow_mut() = Some(executor);
-    });
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
-    let listener = TcpListener::bind(addr, 128).unwrap();
-    echo::sys::close_socket(listener.as_raw_fd()).unwrap();
+    runtime::block_on(async {
+        let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+        let listener = TcpListener::bind(addr, 128).unwrap();
+        while let Ok((fd, addr)) = listener.accept().await {
+            println!("Accepted connection from {}", addr);
+            unsafe {
+                libc::close(fd);
+            }
+        }
+    })
+    .unwrap();
 }

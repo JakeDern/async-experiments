@@ -5,9 +5,26 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake};
 
-use crate::channel;
+use crate::{EXECUTOR, channel};
 
 type TaskId = usize;
+
+pub fn spawn<F, T>(fut: F) -> JoinHandle<T>
+where
+    F: Future<Output = T> + 'static,
+    T: 'static,
+{
+    EXECUTOR.with_borrow_mut(|executor| {
+        executor
+            .as_mut()
+            .expect("Executor not initialized")
+            .spawn(fut)
+    })
+}
+
+pub fn make_progress() {
+    EXECUTOR.with_borrow_mut(|executor| executor.as_mut().expect("Executor not initialized").run())
+}
 
 pub struct Task {
     id: TaskId,
@@ -42,7 +59,7 @@ impl Executor {
         }
     }
 
-    fn spawn<F, T>(&mut self, fut: F) -> JoinHandle<T>
+    pub fn spawn<F, T>(&mut self, fut: F) -> JoinHandle<T>
     where
         F: Future<Output = T> + 'static,
         T: 'static,

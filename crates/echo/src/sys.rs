@@ -28,11 +28,24 @@ pub fn epoll_create() -> io::Result<RawFd> {
     syscall!(epoll_create1(0))
 }
 
-pub fn listen_socket(fd: RawFd, backlog: c_int) -> io::Result<i32> {
+pub fn sock_listen(fd: RawFd, backlog: c_int) -> io::Result<i32> {
     syscall!(listen(fd, backlog))
 }
 
-pub fn bind_socket(fd: RawFd, addr: SocketAddr, reuseport: bool) -> io::Result<i32> {
+pub fn sock_accept_nonblock(fd: RawFd) -> io::Result<(RawFd, SocketAddr)> {
+    let mut client_addr: libc::sockaddr = unsafe { std::mem::zeroed() };
+    let mut addr_len = std::mem::size_of::<libc::sockaddr>() as libc::socklen_t;
+    let res = syscall!(accept4(
+        fd,
+        &mut client_addr as *mut _,
+        &mut addr_len as *mut _,
+        libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
+    ))?;
+
+    return Ok((res, sockaddr_to_socketaddr(client_addr)));
+}
+
+pub fn sock_bind(fd: RawFd, addr: SocketAddr, reuseport: bool) -> io::Result<i32> {
     let addrinfo = socketaddr_to_addrinfo(addr);
     if reuseport {
         set_so_reuseport(fd)?;
@@ -62,6 +75,22 @@ pub fn set_so_reuseport(fd: RawFd) -> io::Result<i32> {
         &optval as *const c_int as *const _,
         std::mem::size_of::<c_int>() as u32,
     ))
+}
+
+pub fn sockaddr_to_socketaddr(addr: libc::sockaddr) -> SocketAddr {
+    match addr.sa_family as c_int {
+        libc::AF_INET => {
+            let sockaddr_in: libc::sockaddr_in = unsafe { std::mem::transmute(addr) };
+            let ip =
+                std::net::Ipv4Addr::from(u32::from_be(sockaddr_in.sin_addr.s_addr).to_ne_bytes());
+            let port = u16::from_be(sockaddr_in.sin_port);
+            SocketAddr::V4(std::net::SocketAddrV4::new(ip, port))
+        }
+        libc::AF_INET6 => {
+            todo!()
+        }
+        _ => panic!("Unsupported address family"),
+    }
 }
 
 pub fn socketaddr_to_addrinfo(addr: SocketAddr) -> libc::addrinfo {
